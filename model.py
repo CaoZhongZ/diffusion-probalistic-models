@@ -3,7 +3,7 @@ This is the heart of the algorithm. Implements the objective function and mu
 and sigma estimators for a Gaussian diffusion probabilistic model
 """
 
-import numpy as np
+# import numpy as np
 
 # import theano
 # import theano.tensor as T
@@ -246,12 +246,12 @@ class DiffusionModel(Module):
                 + (sigma_posterior**2 + (mu_posterior-mu)**2)/(2*sigma**2)
                 - 0.5)
         # conditional entropies H_q(x^T|x^0) and H_q(x^1|x^0)
-        H_startpoint = (0.5*(1 + np.log(2.*np.pi))).astype(theano.config.floatX) + 0.5*T.log(self.beta_arr[0])
-        H_endpoint = (0.5*(1 + np.log(2.*np.pi))).astype(theano.config.floatX) + 0.5*T.log(self.get_beta_full_trajectory())
-        H_prior = (0.5*(1 + np.log(2.*np.pi))).astype(theano.config.floatX) + 0.5*T.log(1.)
+        H_startpoint = (0.5*(1 + T.log(2.*T.tensor(T.pi)))) + 0.5*T.log(self.beta_arr[0])
+        H_endpoint = (0.5*(1 + T.log(2.*T.tensor(T.pi)))) + 0.5*T.log(self.get_beta_full_trajectory())
+        H_prior = (0.5*(1 + T.log(2.*T.tensor(T.pi)))) + 0.5*T.log(T.tensor(1.))
         negL_bound = KL*self.trajectory_length + H_startpoint - H_endpoint + H_prior
         # the negL_bound if this was an isotropic Gaussian model of the data
-        negL_gauss = (0.5*(1 + np.log(2.*np.pi))).astype(theano.config.floatX) + 0.5*T.log(1.)
+        negL_gauss = (0.5*(1 + T.log(2.*T.pi))) + 0.5*T.log(T.tensor(1.))
         negL_diff = negL_bound - negL_gauss
         L_diff_bits = negL_diff / T.log(2.)
         L_diff_bits_avg = L_diff_bits.mean()*self.n_colors
