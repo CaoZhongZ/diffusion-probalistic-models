@@ -78,8 +78,10 @@ class DiffusionModel(Module):
             n_layers_conv, n_layers_dense_lower, n_layers_dense_upper,
             n_hidden_conv, n_hidden_dense_lower, n_hidden_dense_lower_output, n_hidden_dense_upper,
             spatial_width, n_colors, n_scales, n_temporal_basis)
-        self.temporal_basis = self.generate_temporal_basis(trajectory_length, n_temporal_basis)
-        self.beta_arr = self.generate_beta_arr(step1_beta)
+        self.register_buffer(
+            'temporal_basis', self.generate_temporal_basis(
+                trajectory_length, n_temporal_basis))
+        self.register_buffer('beta_arr', self.generate_beta_arr(step1_beta))
 
     def generate_beta_arr(self, step1_beta):
         """
@@ -115,11 +117,12 @@ class DiffusionModel(Module):
         Generate vector of weights allowing selection of current timestep.
         (if t is not an integer, the weights will linearly interpolate)
         """
+        device=t.device
         n_seg = self.trajectory_length
-        t_compare = T.arange(n_seg).reshape((1,n_seg))
+        t_compare = T.arange(n_seg, device=device).reshape((1,n_seg))
         diff = abs(t - t_compare)
         t_weights, _ = T.max(T.cat(((-diff+1).reshape((n_seg,1)),
-                           T.zeros((n_seg,1))), dim=1), 1)
+                           T.zeros((n_seg,1), device=device)), dim=1), 1)
         return t_weights.reshape((-1,1))
 
 
@@ -171,6 +174,7 @@ class DiffusionModel(Module):
 
         X_noiseless = X_noiseless.reshape(
             (-1, self.n_colors, self.spatial_width, self.spatial_width))
+        device = X_noiseless.device
 
         n_images = X_noiseless.shape[0]
         # choose a timestep in [1, self.trajectory_length-1].
@@ -178,10 +182,12 @@ class DiffusionModel(Module):
         # first timestep, so we skip it.
         # TODO for some reason random_integer is missing from the Blocks
         # theano random number generator.
-        t = T.floor(T.empty(1,1).uniform_(1, self.trajectory_length).to(config.floatX))
+        t = T.floor(
+            T.empty((1,1), device = device).uniform_(1, self.trajectory_length))
         t_weights = self.get_t_weights(t)
         N = T.normal(0., 1.,
-            (n_images, self.n_colors, self.spatial_width, self.spatial_width))
+            (n_images, self.n_colors, self.spatial_width, self.spatial_width),
+                     device=device)
 
         # noise added this time step
         beta_forward = self.get_beta_forward(t)
@@ -197,7 +203,10 @@ class DiffusionModel(Module):
         beta_cumulative_prior_step = 1. - alpha_cum_forward/alpha_forward
 
         # generate the corrupted training data
-        X_uniformnoise = X_noiseless + (T.empty((n_images, self.n_colors, self.spatial_width, self.spatial_width), dtype=config.floatX).uniform_()-T.full((1,), 0.5,dtype=config.floatX))*T.full((1,), self.uniform_noise, dtype=config.floatX)
+        X_uniformnoise = X_noiseless +(
+            T.empty_like(X_noiseless).uniform_()
+            - T.full((1,), 0.5, device=device)
+            * T.full((1,), self.uniform_noise, device=device))
         X_noisy = X_uniformnoise*T.sqrt(alpha_cum_forward) + N*T.sqrt(1. - alpha_cum_forward)
 
         # compute the mean and covariance of the posterior distribution
@@ -244,16 +253,16 @@ class DiffusionModel(Module):
         # the KL divergence between model transition and posterior from data
         KL = (  T.log(sigma) - T.log(sigma_posterior)
                 + (sigma_posterior**2 + (mu_posterior-mu)**2)/(2*sigma**2)
-                - 0.5)
+                - 0.5 )
         # conditional entropies H_q(x^T|x^0) and H_q(x^1|x^0)
         H_startpoint = (0.5*(1 + T.log(2.*T.tensor(T.pi)))) + 0.5*T.log(self.beta_arr[0])
         H_endpoint = (0.5*(1 + T.log(2.*T.tensor(T.pi)))) + 0.5*T.log(self.get_beta_full_trajectory())
         H_prior = (0.5*(1 + T.log(2.*T.tensor(T.pi)))) + 0.5*T.log(T.tensor(1.))
         negL_bound = KL*self.trajectory_length + H_startpoint - H_endpoint + H_prior
         # the negL_bound if this was an isotropic Gaussian model of the data
-        negL_gauss = (0.5*(1 + T.log(2.*T.pi))) + 0.5*T.log(T.tensor(1.))
+        negL_gauss = (0.5*(1 + T.log(2.*T.tensor(T.pi)))) + 0.5*T.log(T.tensor(1.))
         negL_diff = negL_bound - negL_gauss
-        L_diff_bits = negL_diff / T.log(2.)
+        L_diff_bits = negL_diff / T.log(T.tensor(2.))
         L_diff_bits_avg = L_diff_bits.mean()*self.n_colors
         return L_diff_bits_avg
 
@@ -284,7 +293,7 @@ class DiffusionModel(Module):
         return [mu_diff, logratio, mu, sigma, mu_posterior, sigma_posterior, X_noiseless, X_noisy]
 
 
-    def cost(self, X_noiseless):
+    def forward(self, X_noiseless):
         """
         Compute the lower bound on the log likelihood, given a training minibatch.
         This will draw a single timestep and compute the cost for that timestep only.
@@ -308,8 +317,8 @@ class DiffusionModel(Module):
             self.n_colors, 2, self.n_temporal_basis))
         coeff_weights = T.matmul(self.temporal_basis, t_weights)
         concat_coeffs = T.matmul(Z, coeff_weights)
-        mu_coeff = concat_coeffs[:,:,:,:,0].permute(0,3,1,2,4)
-        beta_coeff = concat_coeffs[:,:,:,:,1].permute(0,3,1,2,4)
+        mu_coeff = concat_coeffs[:,:,:,:,0].permute(0,3,1,2,4).squeeze(4)
+        beta_coeff = concat_coeffs[:,:,:,:,1].permute(0,3,1,2,4).squeeze(4)
         return mu_coeff, beta_coeff
 
 

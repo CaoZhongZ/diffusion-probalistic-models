@@ -40,6 +40,8 @@ def parse_args():
                         help='Use Apple MPS shader')
     parser.add_argument('--use-cuda', type=bool, default=False,
                         help='Use Nvidia GPU')
+    parser.add_argument('--log-interval', type=int, default=10,
+                        help='Log loss during interval')
     args = parser.parse_args()
 
     model_args = eval('dict(' + args.model_args + ')')
@@ -51,24 +53,24 @@ def parse_args():
 
 def train(args, model, device, train_loader, optimizer, epoch):
     ## set up optimization
-    dpm.train()
+    model.train()
 
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
-        cost = dpm.cost(data)
-        cost.backward()
+        loss = model(data)
+        loss.backward()
         optimizer.step()
 
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
-            if args.dry_run:
-                break
 
 
 def test(args, model, device, test_loader):
+    model.test()
+
     for batch_idx, (data, target) in enumerate(test_loader):
         pass
 
@@ -80,6 +82,7 @@ def checkpoint(args, epoch, optimizer, loss):
                 'loss':loss}, model_save_name)
 
 if __name__ == '__main__':
+    __spec__ = None
     # TODO batches_per_epoch should not be hard coded
     batches_per_epoch = 500
     import sys
@@ -160,12 +163,12 @@ if __name__ == '__main__':
     uniform_noise = baseline_uniform_noise/scl
 
     ## initialize the model
-    dpm = model.DiffusionModel(spatial_width, n_colors, uniform_noise=uniform_noise, **model_args)
+    dpm = model.DiffusionModel(spatial_width, n_colors, uniform_noise=uniform_noise, **model_args).to(device)
     optimizer = RMSprop(dpm.parameters(), lr=args.lr, eps=1e-10)
     scheduler = StepLR(optimizer, step_size=1, gamma=np.exp(np.log(0.1)/1000))
 
     for epoch in range(1, 100000 + 1):
-        train(args, model, device, train_stream, optimizer, epoch)
-        test(model, device, test_stream)
+        train(args, dpm, device, train_stream, optimizer, epoch)
+        test(args, dpm, device, test_stream)
         scheduler.step()
 
