@@ -36,9 +36,9 @@ def parse_args():
                         help='Name of dataset to use.')
     parser.add_argument('--plot_before_training', type=bool, default=False,
                         help='Save diagnostic plots at epoch 0, before any training.')
-    parser.add_argument('--use-mps', type=bool, default=False,
-                        help='Use Apple MPS shader')
-    parser.add_argument('--use-cuda', type=bool, default=False,
+    parser.add_argument('--use-mps', default=False, action="store_true",
+                        help='Use Apple Metal Performance Shader')
+    parser.add_argument('--use-cuda', default=False, action="store_true",
                         help='Use Nvidia GPU')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='Log loss during interval')
