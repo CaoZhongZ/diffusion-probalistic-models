@@ -69,7 +69,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
 
 
 def test(args, model, device, test_loader):
-    model.test()
+    model.eval()
 
     for batch_idx, (data, target) in enumerate(test_loader):
         pass
